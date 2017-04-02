@@ -16,3 +16,8 @@ Install the [ArUco library](https://www.uco.es/investiga/grupos/ava/node/26) (Wr
     ```
 
     **Note:** This ROS package (in the `CMakeLists.txt`) assumes that the `Findaruco.cmake` file was installed to `/usr/local/lib/cmake/`. Look at the output of `sudo make install` to verify this location.
+
+## Resources ##
+
+- [OpenCV contrib]()
+- [ArUco library]()
