@@ -10,6 +10,8 @@
 #include <image_geometry/pinhole_camera_model.h>
 #include <tf/transform_listener.h>
 
+#include <nav_msgs/Odometry.h>
+
 namespace aruco_localizer {
 
 class ArucoLocalizer
@@ -21,7 +23,7 @@ public:
 private:
 	// ROS node handles
 	ros::NodeHandle nh_;
-	ros::NodeHandle private_nh_;
+	ros::NodeHandle nh_private_;
 
 	// image transport pub/sub
 	image_transport::ImageTransport it_;
@@ -32,11 +34,16 @@ private:
 	tf::TransformListener tf_listener_;
 	image_geometry::PinholeCameraModel cam_model_;
 
+	// ROS publishers and subscribers
+	ros::Publisher estimate_pub_;
+
 	// ArUco Map Detector
 	aruco::MarkerMap mmConfig_;
 	aruco::MarkerDetector mDetector_;
 	aruco::MarkerMapPoseTracker mmPoseTracker_;
 	aruco::CameraParameters camParams_;
+
+	bool show_output_video_;
 
 	//
 	// Methods

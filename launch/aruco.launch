@@ -2,7 +2,7 @@
 <launch>
 
 	<node pkg="aruco_localization" type="aruco_localization" name="aruco">
-		<param name="" value="" />
+		<param name="show_output_video" value="true" />
 	</node>
 
 </launch>

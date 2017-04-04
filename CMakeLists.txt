@@ -9,6 +9,13 @@ add_definitions(-std=c++11)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
     roscpp
+    image_transport
+    cv_bridge
+    sensor_msgs
+    nav_msgs
+    message_generation
+    tf
+    image_geometry
 )
 
 ## System dependencies are found with CMake's conventions

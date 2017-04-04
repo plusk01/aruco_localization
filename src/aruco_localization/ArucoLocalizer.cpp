@@ -1,17 +1,17 @@
 #include "aruco_localization/ArucoLocalizer.h"
 
 namespace aruco_localizer {
-  
+
 // ----------------------------------------------------------------------------
 
 ArucoLocalizer::ArucoLocalizer() :
-    nh_(ros::NodeHandle()), nh_private_("~")
+    nh_(ros::NodeHandle()), nh_private_("~"), it_(nh_)
 {
 
     // Read in ROS params
     std::string mmConfigFile = nh_private_.param<std::string>("markermap_config", "");
     double markerSize = nh_private_.param<double>("marker_size", 0.0298);
-    bool showOutputVideo = nh_private_.param<bool>("show_output_video", false);
+    nh_private_.param<bool>("show_output_video", show_output_video_, false);
 
     // Subscribe to input video feed and publish output video feed
     it_ = image_transport::ImageTransport(nh_);
@@ -20,29 +20,29 @@ ArucoLocalizer::ArucoLocalizer() :
 
     // Create ROS publishers
     // tag_list_pub = nh_.advertise<aprilvo::AprilTagList>("apriltags", 100);
-    estimate_pub = nh_private_.advertise<nav_msgs::Odometry>("estimate", 1);
+    estimate_pub_ = nh_private_.advertise<nav_msgs::Odometry>("estimate", 1);
 
     //
     // Set up the ArUco detector
     //
 
-    // Set up the Marker Map dimensions, spacing, dictionary, etc from the YAML
-    mmConfig_.readFromFile(mmConfigFile);
+    // // Set up the Marker Map dimensions, spacing, dictionary, etc from the YAML
+    // mmConfig_.readFromFile(mmConfigFile);
 
-    // Prepare the marker detector by:
-    // (1) setting the dictionary we are using
-    mDetector_.setDictionary(mmConfig_.getDictionary());
-    // (2) setting the corner refinement method
-    // ... TODO -- make this corner sub pix or something
-    mDetector_.setCornerRefinementMethod(MarkerDetector::LINES);
+    // // Prepare the marker detector by:
+    // // (1) setting the dictionary we are using
+    // mDetector_.setDictionary(mmConfig_.getDictionary());
+    // // (2) setting the corner refinement method
+    // // ... TODO -- make this corner sub pix or something
+    // mDetector_.setCornerRefinementMethod(MarkerDetector::LINES);
 
-    // set markmap size. Convert to meters if necessary
-    if (mmConfig_.isExpressedInPixels())
-        mmConfig_ = mmConfig_.convertToMeters(markerSize)
+    // // set markmap size. Convert to meters if necessary
+    // if (mmConfig_.isExpressedInPixels())
+    //     mmConfig_ = mmConfig_.convertToMeters(markerSize)
 
-    // Configure the Pose Tracker
-    if (camParams_.isValid() && mmConfig_.isExpressedInMeters())
-        mmPoseTracker_.setParams(camParams_, mmConfig_);
+    // // Configure the Pose Tracker
+    // if (camParams_.isValid() && mmConfig_.isExpressedInMeters())
+    //     mmPoseTracker_.setParams(camParams_, mmConfig_);
 }
 
 // ----------------------------------------------------------------------------
@@ -61,9 +61,9 @@ void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, con
   }
 
   // update the camera model with the camera's intrinsic parameters
-  cam_model_.fromCameraInfo(cinfo);
+  // cam_model_.fromCameraInfo(cinfo);
 
-  processCvImage(cv_ptr);
+  // processCvImage(cv_ptr);
 
   /*
 
@@ -87,9 +87,9 @@ void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, con
 
   */
 
-  if (show_output_video) {
+  if (show_output_video_) {
     // Update GUI Window
-    cv::imshow(OPENCV_WINDOW, cv_ptr->image);
+    cv::imshow("detections", cv_ptr->image);
     cv::waitKey(1);
   }
 
