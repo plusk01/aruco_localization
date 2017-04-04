@@ -40,9 +40,8 @@ ArucoLocalizer::ArucoLocalizer() :
     if (mmConfig_.isExpressedInPixels())
         mmConfig_ = mmConfig_.convertToMeters(markerSize);
 
-    // Configure the Pose Tracker
-    if (camParams_.isValid() && mmConfig_.isExpressedInMeters())
-        mmPoseTracker_.setParams(camParams_, mmConfig_);
+    // Configuring of Pose Tracker is done once a
+    // CameraInfo message has been received
 }
 
 // ----------------------------------------------------------------------------
@@ -50,75 +49,103 @@ ArucoLocalizer::ArucoLocalizer() :
 ArucoLocalizer::~ArucoLocalizer() { }
 
 // ----------------------------------------------------------------------------
+// Private Methods
+// ----------------------------------------------------------------------------
 
-void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, const sensor_msgs::CameraInfoConstPtr& cinfo) {
-  cv_bridge::CvImagePtr cv_ptr;
-  try {
-    cv_ptr = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8);
-  } catch (cv_bridge::Exception& e) {
-    ROS_ERROR("cv_bridge exception: %s", e.what());
-    return;
-  }
-
-  // Get image as a regular Mat
-  cv::Mat frame = cv_ptr->image;
-
-  // update the camera model with the camera's intrinsic parameters
-  // cam_model_.fromCameraInfo(cinfo);
-
-  // processCvImage(cv_ptr);
-
-  /*
-
+void ArucoLocalizer::processImage(cv::Mat& frame) {
 
     // Detection of the board
-    vector<aruco::Marker> detected_markers=TheMarkerDetector.detect(TheInputImage);
+    std::vector<aruco::Marker> detected_markers = mDetector_.detect(frame);
 
     // print the markers detected that belongs to the markerset
-    for(auto idx:TheMarkerMapConfig.getIndices(detected_markers))
-        detected_markers[idx].draw(TheInputImageCopy, Scalar(0, 0, 255), 2);
+    for (auto idx : mmConfig_.getIndices(detected_markers))
+        detected_markers[idx].draw(frame, cv::Scalar(0, 0, 255), 1);
 
-    //detect 3d info if possible
-    if (TheMSPoseTracker.isValid()){
-        if ( TheMSPoseTracker.estimatePose(detected_markers)){
-            aruco::CvDrawingUtils::draw3dAxis(TheInputImageCopy,  TheCameraParameters,TheMSPoseTracker.getRvec(),TheMSPoseTracker.getTvec(),TheMarkerMapConfig[0].getMarkerSize()*2);
-            frame_pose_map.insert(make_pair(index,TheMSPoseTracker.getRTMatrix() ));
-            cout<<"pose rt="<<TheMSPoseTracker.getRvec()<<" "<<TheMSPoseTracker.getTvec()<<endl;
+    // If the Pose Tracker was properly initialized, find 3D pose information
+    if (mmPoseTracker_.isValid()) {
+        if (mmPoseTracker_.estimatePose(detected_markers)) {
+            aruco::CvDrawingUtils::draw3dAxis(frame, camParams_, mmPoseTracker_.getRvec(), mmPoseTracker_.getTvec(), mmConfig_[0].getMarkerSize()*2);
+            // std::map<int,cv::Mat> frame_pose_map;//set of poses and the frames they were detected
+            // frame_pose_map.insert(std::make_pair(index, mmPoseTracker_.getRTMatrix()));
+            std::cout << "pose rt=" << mmPoseTracker_.getRvec() << " " << mmPoseTracker_.getTvec() << std::endl;
         }
     }
 
+}
 
-  */
+// ----------------------------------------------------------------------------
 
+void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, const sensor_msgs::CameraInfoConstPtr& cinfo) {
+    cv_bridge::CvImagePtr cv_ptr;
+    try {
+        cv_ptr = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8);
+    } catch (cv_bridge::Exception& e) {
+        ROS_ERROR("cv_bridge exception: %s", e.what());
+        return;
+    }
 
+    // update the camera model with the camera's intrinsic parameters
+    cam_model_.fromCameraInfo(cinfo);
 
-  // Detection of the board
-  std::vector<aruco::Marker> detected_markers = mDetector_.detect(frame);
+    // Configure the Pose Tracker if it has not been configured before
+    if (!mmPoseTracker_.isValid() && mmConfig_.isExpressedInMeters()) {
 
-  // print the markers detected that belongs to the markerset
-  for (auto idx : mmConfig_.getIndices(detected_markers))
-      detected_markers[idx].draw(frame, cv::Scalar(0, 0, 255), 2);
+        camParams_ = ros2arucoCamParams(cinfo);
 
-  //detect 3d info if possible
-  // if (TheMSPoseTracker.isValid()){
-  //     if ( TheMSPoseTracker.estimatePose(detected_markers)){
-  //         aruco::CvDrawingUtils::draw3dAxis(TheInputImageCopy,  TheCameraParameters,TheMSPoseTracker.getRvec(),TheMSPoseTracker.getTvec(),TheMarkerMapConfig[0].getMarkerSize()*2);
-  //         frame_pose_map.insert(make_pair(index,TheMSPoseTracker.getRTMatrix() ));
-  //         cout<<"pose rt="<<TheMSPoseTracker.getRvec()<<" "<<TheMSPoseTracker.getTvec()<<endl;
-  //     }
-  // }
+        // Now, if the camera params have been ArUco-ified, set up the tracker
+        if (camParams_.isValid())
+            mmPoseTracker_.setParams(camParams_, mmConfig_);
 
+    }
 
+    // ==========================================================================
+    // Process the incoming video frame
 
+    // Get image as a regular Mat
+    cv::Mat frame = cv_ptr->image;
 
-  if (show_output_video_) {
-    // Update GUI Window
-    cv::imshow("detections", frame);
-    cv::waitKey(1);
-  }
+    // Process the image and do ArUco localization on it
+    processImage(frame);
 
-  // Output modified video stream
-  image_pub_.publish(cv_ptr->toImageMsg());
+    if (show_output_video_) {
+        // Update GUI Window
+        cv::imshow("detections", frame);
+        cv::waitKey(1);
+    }
+
+    // ==========================================================================
+
+    // Output modified video stream
+    image_pub_.publish(cv_ptr->toImageMsg());
+}
+
+// ----------------------------------------------------------------------------
+
+aruco::CameraParameters ArucoLocalizer::ros2arucoCamParams(const sensor_msgs::CameraInfoConstPtr& cinfo) {
+    cv::Mat cameraMatrix(3, 3, CV_64FC1);
+    cv::Mat distortionCoeff(4, 1, CV_64FC1);
+    cv::Size size(cinfo->height, cinfo->width);
+
+    // Make a regular 3x3 K matrix from CameraInfo
+    for(int i=0; i<9; ++i)
+        cameraMatrix.at<double>(i%3, i-(i%3)*3) = cinfo->K[i];
+
+    // The ArUco library requires that there are only 4 distortion params (k1, k2, p1, p2, 0) 
+    if (cinfo->D.size() == 4 || cinfo->D.size() == 5) {
+
+        // Make a regular 4x1 D matrix from CameraInfo
+        for(int i=0; i<4; ++i)
+            distortionCoeff.at<double>(i, 0) = cinfo->D[i];
+
+    } else {
+
+        ROS_WARN("[aruco] Length of distortion matrix is not 4, assuming zero distortion.");
+        for(int i=0; i<4; ++i)
+            distortionCoeff.at<double>(i, 0) = 0;
+
+    }
+
+    return aruco::CameraParameters(cameraMatrix, distortionCoeff, size);
 }
 
 // ----------------------------------------------------------------------------
