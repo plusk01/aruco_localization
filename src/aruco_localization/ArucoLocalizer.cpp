@@ -26,23 +26,23 @@ ArucoLocalizer::ArucoLocalizer() :
     // Set up the ArUco detector
     //
 
-    // // Set up the Marker Map dimensions, spacing, dictionary, etc from the YAML
-    // mmConfig_.readFromFile(mmConfigFile);
+    // Set up the Marker Map dimensions, spacing, dictionary, etc from the YAML
+    mmConfig_.readFromFile(mmConfigFile);
 
-    // // Prepare the marker detector by:
-    // // (1) setting the dictionary we are using
-    // mDetector_.setDictionary(mmConfig_.getDictionary());
-    // // (2) setting the corner refinement method
-    // // ... TODO -- make this corner sub pix or something
-    // mDetector_.setCornerRefinementMethod(MarkerDetector::LINES);
+    // Prepare the marker detector by:
+    // (1) setting the dictionary we are using
+    mDetector_.setDictionary(mmConfig_.getDictionary());
+    // (2) setting the corner refinement method
+    // ... TODO -- make this corner sub pix or something
+    mDetector_.setCornerRefinementMethod(aruco::MarkerDetector::LINES);
 
-    // // set markmap size. Convert to meters if necessary
-    // if (mmConfig_.isExpressedInPixels())
-    //     mmConfig_ = mmConfig_.convertToMeters(markerSize)
+    // set markmap size. Convert to meters if necessary
+    if (mmConfig_.isExpressedInPixels())
+        mmConfig_ = mmConfig_.convertToMeters(markerSize);
 
-    // // Configure the Pose Tracker
-    // if (camParams_.isValid() && mmConfig_.isExpressedInMeters())
-    //     mmPoseTracker_.setParams(camParams_, mmConfig_);
+    // Configure the Pose Tracker
+    if (camParams_.isValid() && mmConfig_.isExpressedInMeters())
+        mmPoseTracker_.setParams(camParams_, mmConfig_);
 }
 
 // ----------------------------------------------------------------------------
@@ -59,6 +59,9 @@ void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, con
     ROS_ERROR("cv_bridge exception: %s", e.what());
     return;
   }
+
+  // Get image as a regular Mat
+  cv::Mat frame = cv_ptr->image;
 
   // update the camera model with the camera's intrinsic parameters
   // cam_model_.fromCameraInfo(cinfo);
@@ -87,9 +90,30 @@ void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, con
 
   */
 
+
+
+  // Detection of the board
+  std::vector<aruco::Marker> detected_markers = mDetector_.detect(frame);
+
+  // print the markers detected that belongs to the markerset
+  for (auto idx : mmConfig_.getIndices(detected_markers))
+      detected_markers[idx].draw(frame, cv::Scalar(0, 0, 255), 2);
+
+  //detect 3d info if possible
+  // if (TheMSPoseTracker.isValid()){
+  //     if ( TheMSPoseTracker.estimatePose(detected_markers)){
+  //         aruco::CvDrawingUtils::draw3dAxis(TheInputImageCopy,  TheCameraParameters,TheMSPoseTracker.getRvec(),TheMSPoseTracker.getTvec(),TheMarkerMapConfig[0].getMarkerSize()*2);
+  //         frame_pose_map.insert(make_pair(index,TheMSPoseTracker.getRTMatrix() ));
+  //         cout<<"pose rt="<<TheMSPoseTracker.getRvec()<<" "<<TheMSPoseTracker.getTvec()<<endl;
+  //     }
+  // }
+
+
+
+
   if (show_output_video_) {
     // Update GUI Window
-    cv::imshow("detections", cv_ptr->image);
+    cv::imshow("detections", frame);
     cv::waitKey(1);
   }
 

@@ -3,6 +3,9 @@
 
   <node pkg="aruco_localization" type="aruco_localization" name="aruco">
     <param name="show_output_video" value="true" />
+    <param name="markermap_config" value="$(find desktopquad_sim)/params/aruco_mip_36h12_markermap.yaml" />
+    <param name="marker_size" value="0.0298" />
+
     <remap from="input_image" to="usb_cam/image_raw" />
     <remap from="output_image" to="aruco/image" />
   </node>
