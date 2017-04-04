@@ -52,6 +52,42 @@ ArucoLocalizer::~ArucoLocalizer() { }
 // Private Methods
 // ----------------------------------------------------------------------------
 
+void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
+    static tf::TransformBroadcaster br;
+
+    // Create the transform from the camera to the ArUco Marker Map
+    tf::Transform transform = aruco2tf(rvec, tvec);
+
+    // tf::StampedTransform cam2Ref;
+    // cam2Ref.setIdentity();
+
+    ros::Time now = ros::Time::now();
+
+    br.sendTransform(tf::StampedTransform(transform, now, "aruco", "camera"));
+
+    //
+    // Link camera to the quad body
+    //
+
+    transform.setIdentity();
+    transform.setOrigin(tf::Vector3(0.0, 0.0, 0));
+    tf::Quaternion q; q.setRPY(0.0, -1.5707, 0.0);
+    transform.setRotation(q);
+    br.sendTransform(tf::StampedTransform(transform, now, "camera", "chiny"));
+
+
+    //
+    // Link ArUco Marker Map to the world
+    //
+
+    transform.setIdentity();
+    transform.setOrigin(tf::Vector3(0.0, 0.0, -0.4064));
+    br.sendTransform(tf::StampedTransform(transform, now, "world", "aruco"));
+
+}
+
+// ----------------------------------------------------------------------------
+
 void ArucoLocalizer::processImage(cv::Mat& frame) {
 
     // Detection of the board
@@ -67,7 +103,9 @@ void ArucoLocalizer::processImage(cv::Mat& frame) {
             aruco::CvDrawingUtils::draw3dAxis(frame, camParams_, mmPoseTracker_.getRvec(), mmPoseTracker_.getTvec(), mmConfig_[0].getMarkerSize()*2);
             // std::map<int,cv::Mat> frame_pose_map;//set of poses and the frames they were detected
             // frame_pose_map.insert(std::make_pair(index, mmPoseTracker_.getRTMatrix()));
-            std::cout << "pose rt=" << mmPoseTracker_.getRvec() << " " << mmPoseTracker_.getTvec() << std::endl;
+            // std::cout << "pose rt=" << mmPoseTracker_.getRvec() << " " << mmPoseTracker_.getTvec() << std::endl;
+
+            sendtf(mmPoseTracker_.getRvec(), mmPoseTracker_.getTvec());
         }
     }
 
@@ -146,6 +184,42 @@ aruco::CameraParameters ArucoLocalizer::ros2arucoCamParams(const sensor_msgs::Ca
     }
 
     return aruco::CameraParameters(cameraMatrix, distortionCoeff, size);
+}
+
+// ----------------------------------------------------------------------------
+
+tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec) {
+    // convert rvec and tvec to doubles
+    cv::Mat rvec64; rvec.convertTo(rvec64, CV_64FC1);
+    cv::Mat tvec64; tvec.convertTo(tvec64, CV_64FC1);
+
+    // Unpack Rodrigues paramaterization of the rotation
+    cv::Mat rot(3, 3, CV_64FC1);
+    cv::Rodrigues(rvec64, rot);
+
+    cv::Mat rotate_to_ros(3, 3, CV_64FC1);
+    // -1 0 0
+    // 0 0 1
+    // 0 1 0
+    rotate_to_ros.at<double>(0,0) = -1.0;
+    rotate_to_ros.at<double>(0,1) = 0.0;
+    rotate_to_ros.at<double>(0,2) = 0.0;
+    rotate_to_ros.at<double>(1,0) = 0.0;
+    rotate_to_ros.at<double>(1,1) = 0.0;
+    rotate_to_ros.at<double>(1,2) = 1.0;
+    rotate_to_ros.at<double>(2,0) = 0.0;
+    rotate_to_ros.at<double>(2,1) = 1.0;
+    rotate_to_ros.at<double>(2,2) = 0.0;
+    rot = rot*rotate_to_ros.t();
+
+    tf::Matrix3x3 tf_rot(rot.at<double>(0,0), rot.at<double>(0,1), rot.at<double>(0,2),
+                         rot.at<double>(1,0), rot.at<double>(1,1), rot.at<double>(1,2),
+                         rot.at<double>(2,0), rot.at<double>(2,1), rot.at<double>(2,2));
+
+    tf::Vector3 tf_orig(tvec64.at<double>(0), tvec64.at<double>(1), tvec64.at<double>(2));
+
+    // this transform describes how to get to the ArUco marker map pose from the camera pose
+    return tf::Transform(tf_rot, tf_orig);
 }
 
 // ----------------------------------------------------------------------------
