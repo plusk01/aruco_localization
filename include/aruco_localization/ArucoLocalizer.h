@@ -14,7 +14,8 @@
 // #include <tf/transform_listener.h>
 #include <tf/transform_broadcaster.h>
 
-#include <nav_msgs/Odometry.h>
+// #include <nav_msgs/Odometry.h>
+#include <geometry_msgs/PoseStamped.h>
 
 namespace aruco_localizer {
 

@@ -20,7 +20,7 @@ ArucoLocalizer::ArucoLocalizer() :
 
     // Create ROS publishers
     // tag_list_pub = nh_.advertise<aprilvo::AprilTagList>("apriltags", 100);
-    estimate_pub_ = nh_private_.advertise<nav_msgs::Odometry>("estimate", 1);
+    estimate_pub_ = nh_private_.advertise<geometry_msgs::PoseStamped>("estimate", 1);
 
     //
     // Set up the ArUco detector
@@ -65,26 +65,42 @@ void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
 
     br.sendTransform(tf::StampedTransform(transform, now, "aruco", "camera"));
 
+    // Publish the ArUco estimate of position/orientation
+    geometry_msgs::PoseStamped poseMsg;
+    tf::poseTFToMsg(transform, poseMsg.pose);
+    poseMsg.header.frame_id = "aruco";
+    poseMsg.header.stamp = now;
+    estimate_pub_.publish(poseMsg);
+
     //
     // Link camera to the quad body
     //
 
     transform.setIdentity();
     transform.setOrigin(tf::Vector3(0.0, 0.0, 0));
-    tf::Quaternion q; q.setRPY(0.0, 0.0, M_PI/2);
+    tf::Quaternion q; q.setRPY(0.0, -M_PI, 0.0);
     transform.setRotation(q);
     br.sendTransform(tf::StampedTransform(transform, now, "camera", "chiny"));
 
-
     //
-    // Link ArUco Marker Map to the world
+    // Link ArUco Marker Map to the base
     //
 
     transform.setIdentity();
     transform.setOrigin(tf::Vector3(0.0, 0.0, -0.4064));
-    tf::Quaternion q2; q2.setRPY(0.0, 0.0, 0.0);
+    tf::Quaternion q2; q2.setRPY(0.0, 0.0, -M_PI/2);
     transform.setRotation(q2);
-    br.sendTransform(tf::StampedTransform(transform, now, "world", "aruco"));
+    br.sendTransform(tf::StampedTransform(transform, now, "base", "aruco"));
+
+    //
+    // Link base to the world
+    //
+
+    transform.setIdentity();
+    transform.setOrigin(tf::Vector3(0.0, 0.0, 0.015));
+    tf::Quaternion q3; q3.setRPY(M_PI, 0.0, 0.0);
+    transform.setRotation(q3);
+    br.sendTransform(tf::StampedTransform(transform, now, "world", "base"));
 
 }
 
@@ -190,6 +206,7 @@ aruco::CameraParameters ArucoLocalizer::ros2arucoCamParams(const sensor_msgs::Ca
 
 // ----------------------------------------------------------------------------
 
+// From ArUco to camera frame
 tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec) {
     // convert rvec and tvec to doubles
     cv::Mat rvec64; rvec.convertTo(rvec64, CV_64FC1);
@@ -210,10 +227,10 @@ tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec)
 
     // Create a rotation quaternion to rotate the orientation to the correct frame
     tf::Quaternion q2;
-    q2.setRPY(0.0, M_PI, M_PI/2);
+    q2.setRPY(0.0, 0.0, -M_PI/2);
     q1 *= q2;
 
-    tf::Vector3 tf_orig(tvec64.at<double>(0), tvec64.at<double>(1), tvec64.at<double>(2));
+    tf::Vector3 tf_orig(tvec64.at<double>(0), -tvec64.at<double>(1), tvec64.at<double>(2));
 
     // this transform describes how to get to the ArUco marker map pose from the camera pose
     return tf::Transform(q1, tf_orig);
