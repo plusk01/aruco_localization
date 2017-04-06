@@ -78,7 +78,7 @@ void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
 
     transform.setIdentity();
     transform.setOrigin(tf::Vector3(0.0, 0.0, 0));
-    tf::Quaternion q; q.setRPY(0.0, M_PI, -M_PI/2);
+    tf::Quaternion q; q.setRPY(M_PI, 0, 0);
     transform.setRotation(q);
     br.sendTransform(tf::StampedTransform(transform, now, "camera", "chiny"));
 
