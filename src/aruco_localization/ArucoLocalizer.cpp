@@ -78,7 +78,7 @@ void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
 
     transform.setIdentity();
     transform.setOrigin(tf::Vector3(0.0, 0.0, 0));
-    tf::Quaternion q; q.setRPY(0.0, -M_PI, 0.0);
+    tf::Quaternion q; q.setRPY(0.0, M_PI, -M_PI/2);
     transform.setRotation(q);
     br.sendTransform(tf::StampedTransform(transform, now, "camera", "chiny"));
 
@@ -236,7 +236,8 @@ tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec)
     // The measurements coming from ArUco are vectors from the camera coordinate system
     // pointing at the center of the ArUco board. For the tf tree, we want to send how
     // to get from the ArUco board (parent) to the camera frame (child), so we must
-    // calculate the inverse transform described by `.inverse()`
+    // calculate the inverse transform described by `.inverse()`.
+    // Remember: First you rotate to orient yourself with your parent, then you translate to it.
     return tf::Transform(q1, tf_orig).inverse();
 }
 
