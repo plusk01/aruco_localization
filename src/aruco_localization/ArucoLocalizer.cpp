@@ -88,7 +88,7 @@ void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
 
     transform.setIdentity();
     transform.setOrigin(tf::Vector3(0.0, 0.0, -0.4064));
-    tf::Quaternion q2; q2.setRPY(0.0, 0.0, -M_PI/2);
+    tf::Quaternion q2; q2.setRPY(0.0, 0.0, M_PI/2/*-(M_PI/2+M_PI)*/);
     transform.setRotation(q2);
     br.sendTransform(tf::StampedTransform(transform, now, "base", "aruco"));
 
@@ -124,6 +124,7 @@ void ArucoLocalizer::processImage(cv::Mat& frame) {
             // std::cout << "pose rt=" << mmPoseTracker_.getRvec() << " " << mmPoseTracker_.getTvec() << std::endl;
 
             sendtf(mmPoseTracker_.getRvec(), mmPoseTracker_.getTvec());
+            std::cout << mmPoseTracker_.getTvec() << std::endl;
         }
     }
 
@@ -225,15 +226,18 @@ tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec)
     tf::Quaternion q1;
     tf_rot.getRotation(q1);
 
-    // Create a rotation quaternion to rotate the orientation to the correct frame
-    tf::Quaternion q2;
-    q2.setRPY(0.0, 0.0, -M_PI/2);
-    q1 *= q2;
+    // For debugging
+    double r, p, y;
+    tf::Matrix3x3(q1).getRPY(r,p,y);
+    std::cout << "RPY: [ " << r*(180.0/M_PI) << ", " << p*(180.0/M_PI) << ", " << y*(180.0/M_PI) << " ]\t";
 
-    tf::Vector3 tf_orig(tvec64.at<double>(0), -tvec64.at<double>(1), tvec64.at<double>(2));
+    tf::Vector3 tf_orig(tvec64.at<double>(0), tvec64.at<double>(1), tvec64.at<double>(2));
 
-    // this transform describes how to get to the ArUco marker map pose from the camera pose
-    return tf::Transform(q1, tf_orig);
+    // The measurements coming from ArUco are vectors from the camera coordinate system
+    // pointing at the center of the ArUco board. For the tf tree, we want to send how
+    // to get from the ArUco board (parent) to the camera frame (child), so we must
+    // calculate the inverse transform described by `.inverse()`
+    return tf::Transform(q1, tf_orig).inverse();
 }
 
 // ----------------------------------------------------------------------------
