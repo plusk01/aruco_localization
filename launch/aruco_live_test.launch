@@ -6,6 +6,10 @@
     <param name="markermap_config" value="$(find desktopquad_sim)/params/aruco_mip_36h12_markermap.yaml" />
     <param name="marker_size" value="0.0298" />
 
+    <param name="debug_save_input_frames" value="true" />
+    <param name="debug_save_output_frames" value="true" />
+    <param name="debug_image_path" value="/tmp/arucoimages" />
+
     <remap from="input_image" to="usb_cam/image_raw" />
     <remap from="output_image" to="aruco/image" />
   </node>

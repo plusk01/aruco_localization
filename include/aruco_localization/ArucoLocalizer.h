@@ -17,6 +17,8 @@
 // #include <nav_msgs/Odometry.h>
 #include <geometry_msgs/PoseStamped.h>
 
+#include <experimental/filesystem>
+
 namespace aruco_localizer {
 
 class ArucoLocalizer
@@ -48,7 +50,10 @@ private:
 	aruco::MarkerMapPoseTracker mmPoseTracker_;
 	aruco::CameraParameters camParams_;
 
-	bool show_output_video_;
+	bool showOutputVideo_;
+	bool debugSaveInputFrames_;
+	bool debugSaveOutputFrames_;
+	std::string debugImagePath_;
 
 	//
 	// Methods
@@ -66,6 +71,11 @@ private:
 	// functions to convert to tf and then broadcast
 	tf::Transform aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec);
 	void sendtf(const cv::Mat& rvec, const cv::Mat& tvec);
+
+	// Save the current frame to file. Useful for debugging
+	void saveInputFrame(const cv::Mat& frame);
+	void saveOutputFrame(const cv::Mat& frame);
+	void saveFrame(const cv::Mat& frame, std::string format_spec, unsigned int img_num);
 };
 
 }

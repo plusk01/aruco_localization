@@ -11,7 +11,10 @@ ArucoLocalizer::ArucoLocalizer() :
     // Read in ROS params
     std::string mmConfigFile = nh_private_.param<std::string>("markermap_config", "");
     double markerSize = nh_private_.param<double>("marker_size", 0.0298);
-    nh_private_.param<bool>("show_output_video", show_output_video_, false);
+    nh_private_.param<bool>("show_output_video", showOutputVideo_, false);
+    nh_private_.param<bool>("debug_save_input_frames", debugSaveInputFrames_, false);
+    nh_private_.param<bool>("debug_save_output_frames", debugSaveOutputFrames_, false);
+    nh_private_.param<std::string>("debug_image_path", debugImagePath_, "/tmp/arucoimages");
 
     // Subscribe to input video feed and publish output video feed
     it_ = image_transport::ImageTransport(nh_);
@@ -42,6 +45,13 @@ ArucoLocalizer::ArucoLocalizer() :
 
     // Configuring of Pose Tracker is done once a
     // CameraInfo message has been received
+
+    //
+    // Misc
+    //
+
+    // Create the `debug_image_path` if it doesn't exist
+    std::experimental::filesystem::create_directories(debugImagePath_);
 }
 
 // ----------------------------------------------------------------------------
@@ -133,6 +143,9 @@ void ArucoLocalizer::processImage(cv::Mat& frame) {
 // ----------------------------------------------------------------------------
 
 void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, const sensor_msgs::CameraInfoConstPtr& cinfo) {
+
+    // static int counter = 0;
+
     cv_bridge::CvImagePtr cv_ptr;
     try {
         cv_ptr = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8);
@@ -161,10 +174,14 @@ void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, con
     // Get image as a regular Mat
     cv::Mat frame = cv_ptr->image;
 
+    if (debugSaveInputFrames_) saveInputFrame(frame);
+
     // Process the image and do ArUco localization on it
     processImage(frame);
 
-    if (show_output_video_) {
+    if (debugSaveOutputFrames_) saveOutputFrame(frame);
+
+    if (showOutputVideo_) {
         // Update GUI Window
         cv::imshow("detections", frame);
         cv::waitKey(1);
@@ -239,6 +256,34 @@ tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec)
     // calculate the inverse transform described by `.inverse()`.
     // Remember: First you rotate to orient yourself with your parent, then you translate to it.
     return tf::Transform(q1, tf_orig).inverse();
+}
+
+// ----------------------------------------------------------------------------
+
+void ArucoLocalizer::saveInputFrame(const cv::Mat& frame) {
+    static unsigned int counter = 0;
+    saveFrame(frame, "aruco%03i_in.png", counter++);
+}
+
+// ----------------------------------------------------------------------------
+
+void ArucoLocalizer::saveOutputFrame(const cv::Mat& frame) {
+    static unsigned int counter = 0;
+    saveFrame(frame, "aruco%03i_out.png", counter++);
+}
+
+// ----------------------------------------------------------------------------
+
+void ArucoLocalizer::saveFrame(const cv::Mat& frame, std::string format_spec, unsigned int img_num) {
+    // Create a filename
+    std::stringstream ss;
+    char buffer[100];
+    sprintf(buffer, format_spec.c_str(), img_num);
+    ss << debugImagePath_ << "/" << buffer;
+    std::string filename = ss.str();
+
+    // save the frame
+    cv::imwrite(filename, frame);
 }
 
 // ----------------------------------------------------------------------------
