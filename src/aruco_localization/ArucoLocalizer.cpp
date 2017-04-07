@@ -129,12 +129,9 @@ void ArucoLocalizer::processImage(cv::Mat& frame) {
     if (mmPoseTracker_.isValid()) {
         if (mmPoseTracker_.estimatePose(detected_markers)) {
             aruco::CvDrawingUtils::draw3dAxis(frame, camParams_, mmPoseTracker_.getRvec(), mmPoseTracker_.getTvec(), mmConfig_[0].getMarkerSize()*2);
-            // std::map<int,cv::Mat> frame_pose_map;//set of poses and the frames they were detected
-            // frame_pose_map.insert(std::make_pair(index, mmPoseTracker_.getRTMatrix()));
-            // std::cout << "pose rt=" << mmPoseTracker_.getRvec() << " " << mmPoseTracker_.getTvec() << std::endl;
 
             sendtf(mmPoseTracker_.getRvec(), mmPoseTracker_.getTvec());
-            std::cout << mmPoseTracker_.getTvec() << std::endl;
+            // std::cout << mmPoseTracker_.getTvec() << std::endl;
         }
     }
 
@@ -244,9 +241,9 @@ tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec)
     tf_rot.getRotation(q1);
 
     // For debugging
-    double r, p, y;
-    tf::Matrix3x3(q1).getRPY(r,p,y);
-    std::cout << "RPY: [ " << r*(180.0/M_PI) << ", " << p*(180.0/M_PI) << ", " << y*(180.0/M_PI) << " ]\t";
+    // double r, p, y;
+    // tf::Matrix3x3(q1).getRPY(r,p,y);
+    // std::cout << "RPY: [ " << r*(180.0/M_PI) << ", " << p*(180.0/M_PI) << ", " << y*(180.0/M_PI) << " ]\t";
 
     tf::Vector3 tf_orig(tvec64.at<double>(0), tvec64.at<double>(1), tvec64.at<double>(2));
 
