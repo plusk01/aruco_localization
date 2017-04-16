@@ -116,19 +116,23 @@ void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
 
 // ----------------------------------------------------------------------------
 
-void ArucoLocalizer::processImage(cv::Mat& frame) {
+void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
 
     // Detection of the board
     std::vector<aruco::Marker> detected_markers = mDetector_.detect(frame);
 
-    // print the markers detected that belongs to the markerset
-    for (auto idx : mmConfig_.getIndices(detected_markers))
-        detected_markers[idx].draw(frame, cv::Scalar(0, 0, 255), 1);
+    if (drawDetections) {
+        // print the markers detected that belongs to the markerset
+        for (auto idx : mmConfig_.getIndices(detected_markers))
+            detected_markers[idx].draw(frame, cv::Scalar(0, 0, 255), 1);
+    }
 
     // If the Pose Tracker was properly initialized, find 3D pose information
     if (mmPoseTracker_.isValid()) {
         if (mmPoseTracker_.estimatePose(detected_markers)) {
-            aruco::CvDrawingUtils::draw3dAxis(frame, camParams_, mmPoseTracker_.getRvec(), mmPoseTracker_.getTvec(), mmConfig_[0].getMarkerSize()*2);
+
+            if (drawDetections)
+                aruco::CvDrawingUtils::draw3dAxis(frame, camParams_, mmPoseTracker_.getRvec(), mmPoseTracker_.getTvec(), mmConfig_[0].getMarkerSize()*2);
 
             sendtf(mmPoseTracker_.getRvec(), mmPoseTracker_.getTvec());
             // std::cout << mmPoseTracker_.getTvec() << std::endl;
@@ -174,7 +178,7 @@ void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, con
     if (debugSaveInputFrames_) saveInputFrame(frame);
 
     // Process the image and do ArUco localization on it
-    processImage(frame);
+    processImage(frame, showOutputVideo_);
 
     if (debugSaveOutputFrames_) saveOutputFrame(frame);
 

@@ -63,7 +63,7 @@ private:
 	void cameraCallback(const sensor_msgs::ImageConstPtr& image, const sensor_msgs::CameraInfoConstPtr& cinfo);
 
 	// This is where the real ArUco processing is done
-	void processImage(cv::Mat& frame);
+	void processImage(cv::Mat& frame, bool drawDetections);
 
 	// Convert ROS CameraInfo message to ArUco style CameraParameters
 	aruco::CameraParameters ros2arucoCamParams(const sensor_msgs::CameraInfoConstPtr& cinfo);
