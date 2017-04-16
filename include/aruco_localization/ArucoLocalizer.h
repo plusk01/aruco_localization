@@ -11,11 +11,12 @@
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
 #include <image_geometry/pinhole_camera_model.h>
-// #include <tf/transform_listener.h>
+#include <tf/transform_listener.h>
 #include <tf/transform_broadcaster.h>
 
 // #include <nav_msgs/Odometry.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <std_srvs/Trigger.h>
 
 #include <experimental/filesystem>
 
@@ -39,10 +40,18 @@ private:
 
 	// ROS tf and camera model
 	// tf::TransformListener tf_listener_;
-	image_geometry::PinholeCameraModel cam_model_;
+	// image_geometry::PinholeCameraModel cam_model_;
+
+	// ROS tf listener and broadcaster
+	tf::TransformListener tf_listener_;
+	tf::TransformBroadcaster tf_br_;
+
+	// Bias for the roll and pitch components of camera to body
+	tf::Quaternion quat_att_bias_;
 
 	// ROS publishers and subscribers
 	ros::Publisher estimate_pub_;
+	ros::ServiceServer calib_attitude_;
 
 	// ArUco Map Detector
 	aruco::MarkerMap mmConfig_;
@@ -61,6 +70,9 @@ private:
 
 	// image_transport camera subscriber
 	void cameraCallback(const sensor_msgs::ImageConstPtr& image, const sensor_msgs::CameraInfoConstPtr& cinfo);
+
+	// service handlers
+	bool calibrateAttitude(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
 
 	// This is where the real ArUco processing is done
 	void processImage(cv::Mat& frame, bool drawDetections);

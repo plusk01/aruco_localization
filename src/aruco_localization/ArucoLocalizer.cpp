@@ -22,8 +22,10 @@ ArucoLocalizer::ArucoLocalizer() :
     image_pub_ = it_.advertise("output_image", 1);
 
     // Create ROS publishers
-    // tag_list_pub = nh_.advertise<aprilvo::AprilTagList>("apriltags", 100);
     estimate_pub_ = nh_private_.advertise<geometry_msgs::PoseStamped>("estimate", 1);
+
+    // Create ROS services
+    calib_attitude_ = nh_private_.advertiseService("calibrate_attitude", &ArucoLocalizer::calibrateAttitude, this);
 
     //
     // Set up the ArUco detector
@@ -50,6 +52,9 @@ ArucoLocalizer::ArucoLocalizer() :
     // Misc
     //
 
+    // Initialize the attitude bias to zero
+    quat_att_bias_.setRPY(0, 0, 0);
+
     // Create the `debug_image_path` if it doesn't exist
     std::experimental::filesystem::create_directories(debugImagePath_);
 }
@@ -62,18 +67,38 @@ ArucoLocalizer::~ArucoLocalizer() { }
 // Private Methods
 // ----------------------------------------------------------------------------
 
+bool ArucoLocalizer::calibrateAttitude(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res) {
+
+    // Get the latest attitude in the body frame (is this in the body frame?)
+    tf::StampedTransform transform;
+    tf_listener_.lookupTransform("base", "chiny", ros::Time(0), transform);
+
+    // Store the old bias correction term to correctly capture the original biased attitude
+    tf::Quaternion q0(quat_att_bias_.x() ,quat_att_bias_.y(), quat_att_bias_.z(), quat_att_bias_.w());
+
+    // extract the inverse of the current attitude, unbiased using the current quat bias term
+    // Get the original biased attitude by multiplying by the old bias correction term
+    quat_att_bias_ = transform.getRotation()*q0;
+
+    // Let the caller know what the new zeroed setpoint is
+    double r, p, y;
+    tf::Matrix3x3(quat_att_bias_).getRPY(r,p,y);
+    res.success = true;
+    res.message = "Zeroed at: R=" + std::to_string(r*(180.0/M_PI)) + ", P=" + std::to_string(p*(180.0/M_PI));
+    return true;
+}
+
+// ----------------------------------------------------------------------------
+
 void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
-    static tf::TransformBroadcaster br;
+
+    // We want all transforms to use the same exact time
+    ros::Time now = ros::Time::now();
 
     // Create the transform from the camera to the ArUco Marker Map
     tf::Transform transform = aruco2tf(rvec, tvec);
 
-    // tf::StampedTransform cam2Ref;
-    // cam2Ref.setIdentity();
-
-    ros::Time now = ros::Time::now();
-
-    br.sendTransform(tf::StampedTransform(transform, now, "aruco", "camera"));
+    tf_br_.sendTransform(tf::StampedTransform(transform, now, "aruco", "camera"));
 
     // Publish the ArUco estimate of position/orientation
     geometry_msgs::PoseStamped poseMsg;
@@ -89,8 +114,8 @@ void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
     transform.setIdentity();
     transform.setOrigin(tf::Vector3(0.0, 0.0, 0));
     tf::Quaternion q; q.setRPY(M_PI, 0, 0);
-    transform.setRotation(q);
-    br.sendTransform(tf::StampedTransform(transform, now, "camera", "chiny"));
+    transform.setRotation(q*quat_att_bias_.inverse()); // remove the calibrated attitude bias
+    tf_br_.sendTransform(tf::StampedTransform(transform, now, "camera", "chiny"));
 
     //
     // Link ArUco Marker Map to the base
@@ -100,7 +125,7 @@ void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
     transform.setOrigin(tf::Vector3(0.0, 0.0, -0.4064));
     tf::Quaternion q2; q2.setRPY(0.0, 0.0, M_PI/2/*-(M_PI/2+M_PI)*/);
     transform.setRotation(q2);
-    br.sendTransform(tf::StampedTransform(transform, now, "base", "aruco"));
+    tf_br_.sendTransform(tf::StampedTransform(transform, now, "base", "aruco"));
 
     //
     // Link base to the world
@@ -110,7 +135,7 @@ void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
     transform.setOrigin(tf::Vector3(0.0, 0.0, 0.015));
     tf::Quaternion q3; q3.setRPY(M_PI, 0.0, 0.0);
     transform.setRotation(q3);
-    br.sendTransform(tf::StampedTransform(transform, now, "world", "base"));
+    tf_br_.sendTransform(tf::StampedTransform(transform, now, "world", "base"));
 
 }
 
@@ -156,7 +181,7 @@ void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, con
     }
 
     // update the camera model with the camera's intrinsic parameters
-    cam_model_.fromCameraInfo(cinfo);
+    // cam_model_.fromCameraInfo(cinfo);
 
     // Configure the Pose Tracker if it has not been configured before
     if (!mmPoseTracker_.isValid() && mmConfig_.isExpressedInMeters()) {
