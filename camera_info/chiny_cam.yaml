@@ -1,0 +1,20 @@
+image_width: 640
+image_height: 480
+camera_name: chiny_cam
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [696.8086333514909, 0, 277.0123219611691, 0, 699.2986218072629, 270.1660055408063, 0, 0, 1]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.1981137917405694, -0.3333240631877791, 0.01196781165042199, -0.009169385317782342, 0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1, 0, 0, 0, 1, 0, 0, 0, 1]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [718.790283203125, 0, 272.9284657920289, 0, 0, 721.8692626953125, 273.9026163084382, 0, 0, 0, 1, 0]
