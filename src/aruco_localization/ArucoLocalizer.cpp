@@ -10,7 +10,7 @@ ArucoLocalizer::ArucoLocalizer() :
 
     // Read in ROS params
     std::string mmConfigFile = nh_private_.param<std::string>("markermap_config", "");
-    double markerSize = nh_private_.param<double>("marker_size", 0.0298);
+    markerSize_ = nh_private_.param<double>("marker_size", 0.0298);
     nh_private_.param<bool>("show_output_video", showOutputVideo_, false);
     nh_private_.param<bool>("debug_save_input_frames", debugSaveInputFrames_, false);
     nh_private_.param<bool>("debug_save_output_frames", debugSaveOutputFrames_, false);
@@ -23,6 +23,7 @@ ArucoLocalizer::ArucoLocalizer() :
 
     // Create ROS publishers
     estimate_pub_ = nh_private_.advertise<geometry_msgs::PoseStamped>("estimate", 1);
+    meas_pub_ = nh_private_.advertise<aruco_localization::MarkerMeasurementArray>("measurements", 1);
 
     // Create ROS services
     calib_attitude_ = nh_private_.advertiseService("calibrate_attitude", &ArucoLocalizer::calibrateAttitude, this);
@@ -43,7 +44,7 @@ ArucoLocalizer::ArucoLocalizer() :
 
     // set markmap size. Convert to meters if necessary
     if (mmConfig_.isExpressedInPixels())
-        mmConfig_ = mmConfig_.convertToMeters(markerSize);
+        mmConfig_ = mmConfig_.convertToMeters(markerSize_);
 
     // Configuring of Pose Tracker is done once a
     // CameraInfo message has been received
@@ -152,6 +153,37 @@ void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
             detected_markers[idx].draw(frame, cv::Scalar(0, 0, 255), 1);
     }
 
+    //
+    // Calculate pose of the camera w.r.t each individual marker
+    //
+
+    aruco_localization::MarkerMeasurementArray measurement_msg;
+
+    for (auto marker : detected_markers) {
+        // Create Tvec, Rvec based on the geometry
+        marker.calculateExtrinsics(markerSize_, camParams_);
+
+        // Create the ROS pose message and add to the array
+        aruco_localization::MarkerMeasurement msg;
+        msg.position.x = marker.Tvec.at<float>(0);
+        msg.position.y = marker.Tvec.at<float>(1);
+        msg.position.z = marker.Tvec.at<float>(2);
+
+        tf::Quaternion quat = rodriguesToTFQuat(marker.Rvec);
+        tf::quaternionTFToMsg(quat, msg.orientation);
+
+        // attach the ArUco ID to this measurement
+        msg.aruco_id = marker.id;
+
+        measurement_msg.poses.push_back(msg);
+
+    }
+    std::cout << measurement_msg << std::endl;
+
+    //
+    // Calculate pose of the camera w.r.t the entire marker map
+    //
+
     // If the Pose Tracker was properly initialized, find 3D pose information
     if (mmPoseTracker_.isValid()) {
         if (mmPoseTracker_.estimatePose(detected_markers)) {
@@ -252,9 +284,27 @@ aruco::CameraParameters ArucoLocalizer::ros2arucoCamParams(const sensor_msgs::Ca
 
 // From ArUco to camera frame
 tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec) {
-    // convert rvec and tvec to doubles
-    cv::Mat rvec64; rvec.convertTo(rvec64, CV_64FC1);
+    // convert tvec to a double
     cv::Mat tvec64; tvec.convertTo(tvec64, CV_64FC1);
+
+    // Convert Rodrigues paramaterization of the rotation to quat
+    tf::Quaternion q1 = rodriguesToTFQuat(rvec);
+
+    tf::Vector3 tf_orig(tvec64.at<double>(0), tvec64.at<double>(1), tvec64.at<double>(2));
+
+    // The measurements coming from ArUco are vectors from the camera coordinate system
+    // pointing at the center of the ArUco board. For the tf tree, we want to send how
+    // to get from the ArUco board (parent) to the camera frame (child), so we must
+    // calculate the inverse transform described by `.inverse()`.
+    // Remember: First you rotate to orient yourself with your parent, then you translate to it.
+    return tf::Transform(q1, tf_orig).inverse();
+}
+
+// ----------------------------------------------------------------------------
+
+tf::Quaternion ArucoLocalizer::rodriguesToTFQuat(const cv::Mat& rvec) {
+    // convert rvec to double
+    cv::Mat rvec64; rvec.convertTo(rvec64, CV_64FC1);
 
     // Unpack Rodrigues paramaterization of the rotation
     cv::Mat rot(3, 3, CV_64FC1);
@@ -266,22 +316,15 @@ tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec)
                          rot.at<double>(2,0), rot.at<double>(2,1), rot.at<double>(2,2));
 
     // convert rotation matrix to an orientation quaternion
-    tf::Quaternion q1;
-    tf_rot.getRotation(q1);
+    tf::Quaternion quat;
+    tf_rot.getRotation(quat);
 
     // For debugging
     // double r, p, y;
-    // tf::Matrix3x3(q1).getRPY(r,p,y);
+    // tf::Matrix3x3(quat).getRPY(r,p,y);
     // std::cout << "RPY: [ " << r*(180.0/M_PI) << ", " << p*(180.0/M_PI) << ", " << y*(180.0/M_PI) << " ]\t";
 
-    tf::Vector3 tf_orig(tvec64.at<double>(0), tvec64.at<double>(1), tvec64.at<double>(2));
-
-    // The measurements coming from ArUco are vectors from the camera coordinate system
-    // pointing at the center of the ArUco board. For the tf tree, we want to send how
-    // to get from the ArUco board (parent) to the camera frame (child), so we must
-    // calculate the inverse transform described by `.inverse()`.
-    // Remember: First you rotate to orient yourself with your parent, then you translate to it.
-    return tf::Transform(q1, tf_orig).inverse();
+    return quat;
 }
 
 // ----------------------------------------------------------------------------

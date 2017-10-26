@@ -14,8 +14,9 @@
 #include <tf/transform_listener.h>
 #include <tf/transform_broadcaster.h>
 
-// #include <nav_msgs/Odometry.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <aruco_localization/MarkerMeasurement.h>
+#include <aruco_localization/MarkerMeasurementArray.h>
 #include <std_srvs/Trigger.h>
 
 #include <experimental/filesystem>
@@ -51,9 +52,11 @@ private:
 
 	// ROS publishers and subscribers
 	ros::Publisher estimate_pub_;
+	ros::Publisher meas_pub_;
 	ros::ServiceServer calib_attitude_;
 
 	// ArUco Map Detector
+	double markerSize_;
 	aruco::MarkerMap mmConfig_;
 	aruco::MarkerDetector mDetector_;
 	aruco::MarkerMapPoseTracker mmPoseTracker_;
@@ -81,6 +84,7 @@ private:
 	aruco::CameraParameters ros2arucoCamParams(const sensor_msgs::CameraInfoConstPtr& cinfo);
 
 	// functions to convert to tf and then broadcast
+	tf::Quaternion rodriguesToTFQuat(const cv::Mat& rvec);
 	tf::Transform aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec);
 	void sendtf(const cv::Mat& rvec, const cv::Mat& tvec);
 
