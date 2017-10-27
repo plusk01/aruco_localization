@@ -161,7 +161,7 @@ void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
 
     for (auto marker : detected_markers) {
         // Create Tvec, Rvec based on the geometry
-        marker.calculateExtrinsics(markerSize_, camParams_);
+        marker.calculateExtrinsics(markerSize_, camParams_, false);
 
         // Create the ROS pose message and add to the array
         aruco_localization::MarkerMeasurement msg;
@@ -172,6 +172,12 @@ void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
         tf::Quaternion quat = rodriguesToTFQuat(marker.Rvec);
         tf::quaternionTFToMsg(quat, msg.orientation);
 
+        double r, p, y;
+        tf::Matrix3x3(quat).getRPY(r,p,y);
+        msg.euler.x = r*180/M_PI;
+        msg.euler.y = p*180/M_PI;
+        msg.euler.z = y*180/M_PI;
+
         // attach the ArUco ID to this measurement
         msg.aruco_id = marker.id;
 
@@ -179,6 +185,7 @@ void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
 
     }
     std::cout << measurement_msg << std::endl;
+    meas_pub_.publish(measurement_msg);
 
     //
     // Calculate pose of the camera w.r.t the entire marker map
