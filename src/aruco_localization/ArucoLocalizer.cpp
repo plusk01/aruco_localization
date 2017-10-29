@@ -24,6 +24,7 @@ ArucoLocalizer::ArucoLocalizer() :
     // Create ROS publishers
     estimate_pub_ = nh_private_.advertise<geometry_msgs::PoseStamped>("estimate", 1);
     meas_pub_ = nh_private_.advertise<aruco_localization::MarkerMeasurementArray>("measurements", 1);
+    marker101_pub_ = nh_private_.advertise<geometry_msgs::PoseStamped>("marker101", 1);
 
     // Create ROS services
     calib_attitude_ = nh_private_.advertiseService("calibrate_attitude", &ArucoLocalizer::calibrateAttitude, this);
@@ -99,45 +100,14 @@ void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
     // Create the transform from the camera to the ArUco Marker Map
     tf::Transform transform = aruco2tf(rvec, tvec);
 
-    tf_br_.sendTransform(tf::StampedTransform(transform, now, "aruco", "camera"));
+    tf_br_.sendTransform(tf::StampedTransform(transform.inverse(), now, "aruco", "camera"));
 
-    // Publish the ArUco estimate of position/orientation
+    // Publish measurement of the pose of the ArUco board w.r.t the camera frame
     geometry_msgs::PoseStamped poseMsg;
     tf::poseTFToMsg(transform, poseMsg.pose);
-    poseMsg.header.frame_id = "aruco";
+    poseMsg.header.frame_id = "camera";
     poseMsg.header.stamp = now;
     estimate_pub_.publish(poseMsg);
-
-    //
-    // Link camera to the quad body
-    //
-
-    transform.setIdentity();
-    transform.setOrigin(tf::Vector3(0.0, 0.0, 0));
-    tf::Quaternion q; q.setRPY(M_PI, 0, 0);
-    transform.setRotation(q*quat_att_bias_.inverse()); // remove the calibrated attitude bias
-    tf_br_.sendTransform(tf::StampedTransform(transform, now, "camera", "chiny"));
-
-    //
-    // Link ArUco Marker Map to the base
-    //
-
-    transform.setIdentity();
-    transform.setOrigin(tf::Vector3(0.0, 0.0, -0.4064));
-    tf::Quaternion q2; q2.setRPY(0.0, 0.0, M_PI/2/*-(M_PI/2+M_PI)*/);
-    transform.setRotation(q2);
-    tf_br_.sendTransform(tf::StampedTransform(transform, now, "base", "aruco"));
-
-    //
-    // Link base to the world
-    //
-
-    transform.setIdentity();
-    transform.setOrigin(tf::Vector3(0.0, 0.0, 0.015));
-    tf::Quaternion q3; q3.setRPY(M_PI, 0.0, 0.0);
-    transform.setRotation(q3);
-    tf_br_.sendTransform(tf::StampedTransform(transform, now, "world", "base"));
-
 }
 
 // ----------------------------------------------------------------------------
@@ -154,13 +124,16 @@ void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
     }
 
     //
-    // Calculate pose of the camera w.r.t each individual marker
+    // Calculate pose of each individual marker w.r.t the camera
     //
 
     aruco_localization::MarkerMeasurementArray measurement_msg;
+    measurement_msg.header.frame_id = "camera";
+
+    double avg_depth = 0;
 
     for (auto marker : detected_markers) {
-        // Create Tvec, Rvec based on the geometry
+        // Create Tvec, Rvec based on the camera and marker geometry
         marker.calculateExtrinsics(markerSize_, camParams_, false);
 
         // Create the ROS pose message and add to the array
@@ -169,26 +142,36 @@ void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
         msg.position.y = marker.Tvec.at<float>(1);
         msg.position.z = marker.Tvec.at<float>(2);
 
-        tf::Quaternion quat = rodriguesToTFQuat(marker.Rvec);
-        tf::quaternionTFToMsg(quat, msg.orientation);
+        avg_depth += msg.position.z;
 
+        // Represent Rodrigues parameters as a quaternion
+        tf::Quaternion quat = rodriguesToTFQuat(marker.Rvec);
+
+        // Extract Euler angles
         double r, p, y;
         tf::Matrix3x3(quat).getRPY(r,p,y);
+
         msg.euler.x = r*180/M_PI;
         msg.euler.y = p*180/M_PI;
         msg.euler.z = y*180/M_PI;
+
+        // Convert back to Euler and create orientation msg
+        quat = tf::createQuaternionFromRPY(r,p,y);
+        tf::quaternionTFToMsg(quat, msg.orientation);
 
         // attach the ArUco ID to this measurement
         msg.aruco_id = marker.id;
 
         measurement_msg.poses.push_back(msg);
 
+        if (marker.id == 101) std::cout << msg << std::endl;
+
     }
-    std::cout << measurement_msg << std::endl;
+    std::cout << "Avg depth: " << avg_depth/detected_markers.size() << std::endl;
     meas_pub_.publish(measurement_msg);
 
     //
-    // Calculate pose of the camera w.r.t the entire marker map
+    // Calculate pose of the entire marker map w.r.t the camera
     //
 
     // If the Pose Tracker was properly initialized, find 3D pose information
@@ -199,7 +182,6 @@ void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
                 aruco::CvDrawingUtils::draw3dAxis(frame, camParams_, mmPoseTracker_.getRvec(), mmPoseTracker_.getTvec(), mmConfig_[0].getMarkerSize()*2);
 
             sendtf(mmPoseTracker_.getRvec(), mmPoseTracker_.getTvec());
-            // std::cout << mmPoseTracker_.getTvec() << std::endl;
         }
     }
 
@@ -297,14 +279,18 @@ tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec)
     // Convert Rodrigues paramaterization of the rotation to quat
     tf::Quaternion q1 = rodriguesToTFQuat(rvec);
 
-    tf::Vector3 tf_orig(tvec64.at<double>(0), tvec64.at<double>(1), tvec64.at<double>(2));
+    // Extract Euler angles
+    double r, p, y;
+    tf::Matrix3x3(q1).getRPY(r,p,y);
+
+    // Convert back to Euler and create orientation msg
+    q1 = tf::createQuaternionFromRPY(r,p,y);
+
+    tf::Vector3 origin(tvec64.at<double>(0), tvec64.at<double>(1), tvec64.at<double>(2));
 
     // The measurements coming from ArUco are vectors from the camera coordinate system
-    // pointing at the center of the ArUco board. For the tf tree, we want to send how
-    // to get from the ArUco board (parent) to the camera frame (child), so we must
-    // calculate the inverse transform described by `.inverse()`.
-    // Remember: First you rotate to orient yourself with your parent, then you translate to it.
-    return tf::Transform(q1, tf_orig).inverse();
+    // pointing at the center of the ArUco board.
+    return tf::Transform(q1, origin);
 }
 
 // ----------------------------------------------------------------------------
