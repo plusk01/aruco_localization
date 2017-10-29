@@ -47,8 +47,7 @@ ArucoLocalizer::ArucoLocalizer() :
     if (mmConfig_.isExpressedInPixels())
         mmConfig_ = mmConfig_.convertToMeters(markerSize_);
 
-    // Configuring of Pose Tracker is done once a
-    // CameraInfo message has been received
+    // Configuring of Pose Tracker is done once a CameraInfo message has been received.
 
     //
     // Misc
@@ -60,10 +59,6 @@ ArucoLocalizer::ArucoLocalizer() :
     // Create the `debug_image_path` if it doesn't exist
     std::experimental::filesystem::create_directories(debugImagePath_);
 }
-
-// ----------------------------------------------------------------------------
-
-ArucoLocalizer::~ArucoLocalizer() { }
 
 // ----------------------------------------------------------------------------
 // Private Methods
@@ -100,9 +95,18 @@ void ArucoLocalizer::sendtf(const cv::Mat& rvec, const cv::Mat& tvec) {
     // Create the transform from the camera to the ArUco Marker Map
     tf::Transform transform = aruco2tf(rvec, tvec);
 
+    //
+    // Link the aruco (parent) to the camera (child) frames
+    //
+
+    // Note that `transform` is a measurement of the ArUco map w.r.t the camera,
+    // therefore the inverse gives the transform from `aruco` to `camera`.
     tf_br_.sendTransform(tf::StampedTransform(transform.inverse(), now, "aruco", "camera"));
 
+    //
     // Publish measurement of the pose of the ArUco board w.r.t the camera frame
+    //
+
     geometry_msgs::PoseStamped poseMsg;
     tf::poseTFToMsg(transform, poseMsg.pose);
     poseMsg.header.frame_id = "camera";
@@ -129,8 +133,7 @@ void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
 
     aruco_localization::MarkerMeasurementArray measurement_msg;
     measurement_msg.header.frame_id = "camera";
-
-    double avg_depth = 0;
+    measurement_msg.header.stamp = ros::Time::now();
 
     for (auto marker : detected_markers) {
         // Create Tvec, Rvec based on the camera and marker geometry
@@ -142,10 +145,9 @@ void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
         msg.position.y = marker.Tvec.at<float>(1);
         msg.position.z = marker.Tvec.at<float>(2);
 
-        avg_depth += msg.position.z;
-
         // Represent Rodrigues parameters as a quaternion
         tf::Quaternion quat = rodriguesToTFQuat(marker.Rvec);
+        tf::quaternionTFToMsg(quat, msg.orientation);
 
         // Extract Euler angles
         double r, p, y;
@@ -155,19 +157,12 @@ void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
         msg.euler.y = p*180/M_PI;
         msg.euler.z = y*180/M_PI;
 
-        // Convert back to Euler and create orientation msg
-        quat = tf::createQuaternionFromRPY(r,p,y);
-        tf::quaternionTFToMsg(quat, msg.orientation);
-
         // attach the ArUco ID to this measurement
         msg.aruco_id = marker.id;
 
         measurement_msg.poses.push_back(msg);
-
-        if (marker.id == 101) std::cout << msg << std::endl;
-
     }
-    std::cout << "Avg depth: " << avg_depth/detected_markers.size() << std::endl;
+
     meas_pub_.publish(measurement_msg);
 
     //
@@ -191,8 +186,6 @@ void ArucoLocalizer::processImage(cv::Mat& frame, bool drawDetections) {
 
 void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, const sensor_msgs::CameraInfoConstPtr& cinfo) {
 
-    // static int counter = 0;
-
     cv_bridge::CvImagePtr cv_ptr;
     try {
         cv_ptr = cv_bridge::toCvCopy(image, sensor_msgs::image_encodings::BGR8);
@@ -201,12 +194,10 @@ void ArucoLocalizer::cameraCallback(const sensor_msgs::ImageConstPtr& image, con
         return;
     }
 
-    // update the camera model with the camera's intrinsic parameters
-    // cam_model_.fromCameraInfo(cinfo);
-
     // Configure the Pose Tracker if it has not been configured before
     if (!mmPoseTracker_.isValid() && mmConfig_.isExpressedInMeters()) {
 
+        // Extract ROS camera_info (i.e., K and D) for ArUco library
         camParams_ = ros2arucoCamParams(cinfo);
 
         // Now, if the camera params have been ArUco-ified, set up the tracker
@@ -271,7 +262,7 @@ aruco::CameraParameters ArucoLocalizer::ros2arucoCamParams(const sensor_msgs::Ca
 
 // ----------------------------------------------------------------------------
 
-// From ArUco to camera frame
+// From camera frame to ArUco marker
 tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec) {
     // convert tvec to a double
     cv::Mat tvec64; tvec.convertTo(tvec64, CV_64FC1);
@@ -279,17 +270,10 @@ tf::Transform ArucoLocalizer::aruco2tf(const cv::Mat& rvec, const cv::Mat& tvec)
     // Convert Rodrigues paramaterization of the rotation to quat
     tf::Quaternion q1 = rodriguesToTFQuat(rvec);
 
-    // Extract Euler angles
-    double r, p, y;
-    tf::Matrix3x3(q1).getRPY(r,p,y);
-
-    // Convert back to Euler and create orientation msg
-    q1 = tf::createQuaternionFromRPY(r,p,y);
-
     tf::Vector3 origin(tvec64.at<double>(0), tvec64.at<double>(1), tvec64.at<double>(2));
 
-    // The measurements coming from ArUco are vectors from the camera coordinate system
-    // pointing at the center of the ArUco board.
+    // The measurements coming from the ArUco lib are vectors from the
+    // camera coordinate system pointing at the center of the ArUco board.
     return tf::Transform(q1, origin);
 }
 
@@ -347,7 +331,4 @@ void ArucoLocalizer::saveFrame(const cv::Mat& frame, std::string format_spec, un
     // save the frame
     cv::imwrite(filename, frame);
 }
-
-// ----------------------------------------------------------------------------
-
 }
