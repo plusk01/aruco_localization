@@ -24,7 +24,6 @@ ArucoLocalizer::ArucoLocalizer() :
     // Create ROS publishers
     estimate_pub_ = nh_private_.advertise<geometry_msgs::PoseStamped>("estimate", 1);
     meas_pub_ = nh_private_.advertise<aruco_localization::MarkerMeasurementArray>("measurements", 1);
-    marker101_pub_ = nh_private_.advertise<geometry_msgs::PoseStamped>("marker101", 1);
 
     // Create ROS services
     calib_attitude_ = nh_private_.advertiseService("calibrate_attitude", &ArucoLocalizer::calibrateAttitude, this);

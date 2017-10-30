@@ -48,7 +48,6 @@ namespace aruco_localizer {
         // ROS publishers and subscribers
         ros::Publisher estimate_pub_;
         ros::Publisher meas_pub_;
-        ros::Publisher marker101_pub_;
         ros::ServiceServer calib_attitude_;
 
         // ArUco Map Detector
